@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wurman Dot Map</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="title-block">
+  <h1>Wurman Dot Map</h1>
+  <div class="subtitle">Population density &times; land cover &mdash; Kontur H3 hexagons</div>
+  <div class="lineage">After Passonneau &amp; Wurman, Urban Atlas, 1966</div>
+</div>
+
+<div id="city-nav"><!-- generated from config --></div>
+
+<div id="legend">
+  <h3>Visual Grammar</h3>
+  <div class="legend-section">
+    <div class="legend-section-title">Land Cover (colour)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#C45B52"></div><span class="legend-label">Built-up</span></div>
+    <div class="legend-item"><div class="legend-dot" style="background:#2D5A3F"></div><span class="legend-label">Forest</span></div>
+    <div class="legend-item"><div class="legend-dot" style="background:#C9A84C"></div><span class="legend-label">Cropland</span></div>
+    <div class="legend-item"><div class="legend-dot" style="background:#6B8E5A"></div><span class="legend-label">Grass / Shrub</span></div>
+    <div class="legend-item"><div class="legend-dot" style="background:#B8A88A"></div><span class="legend-label">Bare / Other</span></div>
+  </div>
+  <div class="legend-section">
+    <div class="legend-section-title">Population (size)</div>
+    <div class="legend-size-row">
+      <div class="legend-size-dot" style="width:6px;height:6px"></div>
+      <span class="legend-size-label">Low density</span>
+    </div>
+    <div class="legend-size-row">
+      <div class="legend-size-dot" style="width:12px;height:12px"></div>
+      <span class="legend-size-label">Medium</span>
+    </div>
+    <div class="legend-size-row">
+      <div class="legend-size-dot" style="width:20px;height:20px"></div>
+      <span class="legend-size-label">High density</span>
+    </div>
+  </div>
+</div>
+
+<div id="pop-control">
+  <label>Saturation</label>
+  <input type="range" id="pop-slider" min="500" max="20000" value="5000" step="500">
+  <span class="pop-value" id="pop-value">5,000</span>
+</div>
+
+<div id="controls-hint">
+  Hover hexagon for details<br>
+  Scroll to zoom &middot; Drag to pan
+</div>
+
+<div id="tile-status">Checking MVT&hellip;</div>
+
+<div id="tooltip">
+  <div class="tt-title"></div>
+  <div class="tt-body"></div>
+</div>
+
+<div id="loading">
+  <h2>Loading Tiles</h2>
+  <p>Fetching Kontur H3 hexagons<span class="loading-dots"></span></p>
+</div>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
