@@ -2,8 +2,8 @@
 export const TILES =
   'https://disaster.ninja/active/api/tiles/bivariate/v1/{z}/{x}/{y}.mvt?indicatorsClass=general';
 
-/** Overture Maps PMTiles base layers */
-export const OVERTURE = 'https://overturemaps-tiles-us-west-2-beta.s3.amazonaws.com/2025-10-22';
+/** Overture Maps PMTiles base layers (CloudFront CDN) */
+export const OVERTURE = 'https://d3c1b7bog2u1nn.cloudfront.net/2025-10-22';
 
 /** Color palette */
 export const COL = {

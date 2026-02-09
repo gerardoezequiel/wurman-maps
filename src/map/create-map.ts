@@ -29,43 +29,36 @@ export function createMap(container: string): maplibregl.Map {
           paint: { 'background-color': '#FAFAF6' },
         },
 
-        // 2. Water — warm grey tones (NOT blue)
+        // 2. Water polygons — lakes, rivers, ocean (filled deep blue)
         {
           id: 'water',
           type: 'fill',
           source: 'ov-base',
           'source-layer': 'water',
+          filter: ['==', ['geometry-type'], 'Polygon'],
           paint: {
-            'fill-color': [
-              'interpolate', ['linear'], ['zoom'],
-              8, '#D8D4CA',
-              10, '#D5D0C5',
-              13, '#D0CCBF',
-            ],
-            'fill-opacity': [
-              'interpolate', ['linear'], ['zoom'],
-              8, 0.75,
-              10, 0.85,
-              13, 0.9,
-            ],
+            'fill-color': '#3E6B8A',
+            'fill-opacity': 1,
           },
         },
 
-        // 3. Water edge — warm tone
+        // 3. Water lines — rivers, streams, canals
         {
-          id: 'water-edge',
+          id: 'water-line',
           type: 'line',
           source: 'ov-base',
           'source-layer': 'water',
+          filter: ['==', ['geometry-type'], 'LineString'],
           paint: {
-            'line-color': '#C4BAA8',
+            'line-color': '#3E6B8A',
             'line-width': [
-              'interpolate', ['linear'], ['zoom'],
-              8, 0.3,
-              12, 0.8,
-              14, 1.2,
+              'interpolate', ['exponential', 1.6], ['zoom'],
+              8, 0.5,
+              10, 1.5,
+              14, 4,
+              18, 12,
             ],
-            'line-opacity': 0.5,
+            'line-opacity': 0.8,
           },
         },
 
