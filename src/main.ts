@@ -2,22 +2,22 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import './style.css';
 
 import { createMap } from './map/create-map';
-import { registerImages } from './map/images';
-import { addLayers } from './map/layers';
+import { setupOverlay } from './deck/overlay';
 import { setupTooltip } from './ui/tooltip';
 import { setupCityNav } from './ui/city-nav';
-import { setupSlider } from './ui/slider';
-import { setupLoading } from './ui/loading';
+import { setupScaleBar } from './ui/scale-bar';
+import { initGrain } from './ui/grain';
+import { setupBins } from './ui/bins';
 
 const map = createMap('map');
 
 map.on('load', () => {
-  registerImages(map);
-  addLayers(map);
+  setupOverlay(map);
   setupTooltip(map);
-  setupLoading(map);
+  initGrain();
+  setupScaleBar(map);
 });
 
-// DOM-only setup — doesn't need map.on('load')
+// DOM-only setup
 setupCityNav(map);
-setupSlider(map);
+setupBins();

@@ -1,37 +1,22 @@
 import type { Map } from 'maplibre-gl';
-import { CITIES } from '../config';
 
-/** Generate city navigation buttons and keyboard shortcuts */
+/** Wire sidebar city buttons + keyboard shortcuts */
 export function setupCityNav(map: Map): void {
-  const container = document.getElementById('city-nav')!;
-  const buttons: HTMLButtonElement[] = [];
+  const buttons = document.querySelectorAll<HTMLButtonElement>('.city-btn');
 
-  CITIES.forEach((city, i) => {
-    const btn = document.createElement('button');
-    btn.className = 'city-btn' + (i === 0 ? ' active' : '');
-    btn.textContent = city.name;
-
-    btn.addEventListener('click', () => {
-      buttons.forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
-
-      map.flyTo({
-        center: [city.lng, city.lat],
-        zoom: city.zoom,
-        duration: 2000,
-        essential: true,
-      });
+  buttons.forEach((b) => {
+    b.addEventListener('click', () => {
+      buttons.forEach((x) => x.classList.remove('on'));
+      b.classList.add('on');
+      const [lng, lat, z] = b.dataset.c!.split(',').map(Number);
+      document.getElementById('city-title')!.textContent = b.dataset.name!;
+      map.flyTo({ center: [lng, lat], zoom: z, duration: 1800 });
     });
-
-    container.appendChild(btn);
-    buttons.push(btn);
   });
 
-  // Keyboard shortcuts: 1-N for city navigation
   document.addEventListener('keydown', (e) => {
-    const num = parseInt(e.key, 10);
-    if (num >= 1 && num <= buttons.length) {
-      buttons[num - 1].click();
-    }
+    const bs = [...buttons];
+    const n = e.key === '0' ? 10 : parseInt(e.key, 10);
+    if (n >= 1 && n <= bs.length) bs[n - 1].click();
   });
 }
