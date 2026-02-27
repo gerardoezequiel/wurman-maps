@@ -1,11 +1,11 @@
-import { MVTLayer } from '@deck.gl/geo-layers';
 import { ScatterplotLayer } from '@deck.gl/layers';
 import { IconLayer } from '@deck.gl/layers';
 import type { Layer } from '@deck.gl/core';
-import { TILES, COL, BINS, SAT, MISREG, CELL_M } from '../config';
+import { COL, BINS, SAT, MISREG, CELL_M } from '../config';
 import { createAtlas, IM } from './atlas';
-import { prep, getPos, getCls, getBinI } from './classify';
+import { getPos, getCls, getBinI } from './classify';
 import type { PreparedFeature } from './classify';
+import type { H3DataProvider } from './h3-data-provider';
 
 const iconAtlas = createAtlas();
 
@@ -18,13 +18,7 @@ function ringOp(z: number): number { return lerp(0, 0.92, (z - 8) / 2); }
 function dotOp(z: number): number { return lerp(0, 0.95, (z - 8.5) / 2); }
 function fieldOp(z: number): number { return lerp(0, 0.9, (z - 7) / 2.5); }
 
-const seenH3 = new Set<string>();
-
-export function clearSeen(): void {
-  seenH3.clear();
-}
-
-export function buildLayers(Z: number): Layer[] {
+export function buildLayers(provider: H3DataProvider, Z: number): Layer[] {
   const z = Z;
   const rOp = ringOp(z);
   const dOp = dotOp(z);
@@ -32,41 +26,9 @@ export function buildLayers(Z: number): Layer[] {
   const m = MISREG;
 
   return [
-    new MVTLayer({
-      id: 'k',
-      data: TILES,
-      minZoom: 0,
-      maxZoom: 9,
-      binary: false,
-      uniqueIdProperty: 'h3',
-
-      onViewportLoad: (tiles: unknown) => {
-        seenH3.clear();
-        if (tiles && Array.isArray(tiles)) {
-          for (const t of tiles) {
-            const tile = t as { data?: PreparedFeature[] };
-            if (tile.data) {
-              for (const f of tile.data) {
-                if (f.properties?.h3) prep(f);
-              }
-            }
-          }
-        }
-      },
-
-      renderSubLayers: (props: any) => {
-        const data = props.data as PreparedFeature[] | undefined;
-        if (!data?.length) return null;
-
-        const allH3: PreparedFeature[] = [];
-        for (const d of data) {
-          const idx = d.properties?.h3;
-          if (!idx || seenH3.has(idx as string)) continue;
-          seenH3.add(idx as string);
-          allH3.push(d);
-        }
-        allH3.forEach(prep);
-
+    provider.createMVTLayer(
+      'k',
+      (tileId: string, allH3: PreparedFeature[]): Layer[] => {
         const populated = allH3.filter((d) => (d.properties.population || 0) > 0);
         const green = allH3.filter((d) => getCls(d) === 'green');
         const navy = populated.filter((d) => getCls(d) === 'commercial' || getCls(d) === 'industrial');
@@ -78,7 +40,7 @@ export function buildLayers(Z: number): Layer[] {
         if (fOp > 0.01) {
           layers.push(
             new ScatterplotLayer({
-              id: `${props.id}-fld`,
+              id: `${tileId}-fld`,
               data: allH3,
               getPosition: getPos,
               getRadius: 420,
@@ -104,7 +66,7 @@ export function buildLayers(Z: number): Layer[] {
           if (cRings.length) {
             layers.push(
               new IconLayer({
-                id: `${props.id}-rc`,
+                id: `${tileId}-rc`,
                 data: cRings,
                 getPosition: getPos,
                 iconAtlas: iconAtlas as any,
@@ -123,7 +85,7 @@ export function buildLayers(Z: number): Layer[] {
           if (navy.length) {
             layers.push(
               new IconLayer({
-                id: `${props.id}-rs`,
+                id: `${tileId}-rs`,
                 data: navy,
                 getPosition: getPos,
                 iconAtlas: iconAtlas as any,
@@ -147,7 +109,7 @@ export function buildLayers(Z: number): Layer[] {
           if (dotData.length) {
             layers.push(
               new IconLayer({
-                id: `${props.id}-dot`,
+                id: `${tileId}-dot`,
                 data: dotData,
                 getPosition: getPos,
                 iconAtlas: iconAtlas as any,
@@ -174,7 +136,7 @@ export function buildLayers(Z: number): Layer[] {
         if (dOp > 0.01 && green.length) {
           layers.push(
             new IconLayer({
-              id: `${props.id}-gr`,
+              id: `${tileId}-gr`,
               data: green,
               getPosition: getPos,
               iconAtlas: iconAtlas as any,
@@ -197,7 +159,7 @@ export function buildLayers(Z: number): Layer[] {
         if (dOp > 0.01 && navy.length) {
           layers.push(
             new IconLayer({
-              id: `${props.id}-nv`,
+              id: `${tileId}-nv`,
               data: navy,
               getPosition: getPos,
               iconAtlas: iconAtlas as any,
@@ -220,7 +182,7 @@ export function buildLayers(Z: number): Layer[] {
         if (dOp > 0.01 && institutional.length) {
           layers.push(
             new IconLayer({
-              id: `${props.id}-in`,
+              id: `${tileId}-in`,
               data: institutional,
               getPosition: getPos,
               iconAtlas: iconAtlas as any,
@@ -243,7 +205,7 @@ export function buildLayers(Z: number): Layer[] {
         if (dOp > 0.01 && water.length) {
           layers.push(
             new IconLayer({
-              id: `${props.id}-wa`,
+              id: `${tileId}-wa`,
               data: water,
               getPosition: getPos,
               iconAtlas: iconAtlas as any,
@@ -276,7 +238,7 @@ export function buildLayers(Z: number): Layer[] {
             };
             layers.push(
               new ScatterplotLayer({
-                id: `${props.id}-ch`,
+                id: `${tileId}-ch`,
                 data: populated,
                 getPosition: getPos,
                 getRadius: 450,
@@ -301,10 +263,7 @@ export function buildLayers(Z: number): Layer[] {
 
         return layers;
       },
-
-      updateTriggers: {
-        renderSubLayers: [SAT, Math.round(MISREG * 10), Math.round(Z * 3)],
-      },
-    }),
+      [SAT, Math.round(MISREG * 10), Math.round(Z * 3)],
+    ),
   ];
 }

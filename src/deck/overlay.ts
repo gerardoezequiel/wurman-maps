@@ -1,18 +1,27 @@
 import type maplibregl from 'maplibre-gl';
 import { MapboxOverlay } from '@deck.gl/mapbox';
-import { buildLayers, clearSeen } from './layers';
+import { TILES } from '../config';
+import { H3DataProvider } from './h3-data-provider';
+import { buildLayers } from './layers';
 
 let overlay: MapboxOverlay | null = null;
 let pending = false;
 let Z = 10.4;
+
+const provider = new H3DataProvider({
+  tileUrl: TILES,
+  minZoom: 0,
+  maxZoom: 9,
+  h3Property: 'h3',
+});
 
 function refresh(): void {
   if (pending) return;
   pending = true;
   requestAnimationFrame(() => {
     pending = false;
-    clearSeen();
-    if (overlay) overlay.setProps({ layers: buildLayers(Z) });
+    provider.clearSeen();
+    if (overlay) overlay.setProps({ layers: buildLayers(provider, Z) });
   });
 }
 
@@ -22,7 +31,7 @@ export function setupOverlay(map: maplibregl.Map): void {
 
   overlay = new MapboxOverlay({
     interleaved: true,
-    layers: buildLayers(Z),
+    layers: buildLayers(provider, Z),
   });
   map.addControl(overlay as unknown as maplibregl.IControl);
 
