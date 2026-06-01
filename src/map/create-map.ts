@@ -1,6 +1,6 @@
 import maplibregl from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
-import { CITIES, OVERTURE, TILES } from '../config';
+import { CITIES, OVERTURE, TILES_PMTILES } from '../config';
 
 /** Create the MapLibre instance with Overture PMTiles + Kontur MVT */
 export function createMap(container: string): maplibregl.Map {
@@ -19,50 +19,113 @@ export function createMap(container: string): maplibregl.Map {
         'ov-base': { type: 'vector', url: `pmtiles://${OVERTURE}/base.pmtiles` },
         'ov-trans': { type: 'vector', url: `pmtiles://${OVERTURE}/transportation.pmtiles` },
         'ov-div': { type: 'vector', url: `pmtiles://${OVERTURE}/divisions.pmtiles` },
-        'kontur': { type: 'vector', tiles: [TILES], minzoom: 0, maxzoom: 9 },
+        'kontur': { type: 'vector', url: `pmtiles://${TILES_PMTILES}`, minzoom: 0, maxzoom: 9 },
+        'terrain': {
+          type: 'raster-dem',
+          tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+          encoding: 'terrarium',
+          tileSize: 256,
+          maxzoom: 15,
+        },
       },
       layers: [
-        // 1. Background — warm paper
+        // ════════════════════════════════════════
+        // BELOW DECK.GL (before hex anchor)
+        // ════════════════════════════════════════
+
+        // 1. Background — warm paper white
         {
           id: 'bg',
           type: 'background',
           paint: { 'background-color': '#FAFAF6' },
         },
 
-        // 2. Water polygons — lakes, rivers, ocean (filled deep blue)
+        // 2. Hillshade — grey terrain relief (increased exaggeration)
         {
-          id: 'water',
+          id: 'hillshade',
+          type: 'hillshade',
+          source: 'terrain',
+          paint: {
+            'hillshade-shadow-color': '#4a4a4a',
+            'hillshade-highlight-color': '#fafaf6',
+            'hillshade-exaggeration': 0.60,
+          },
+        } as any,
+
+        // 3. Land cover — natural polygons
+        {
+          id: 'land-cover',
+          type: 'fill',
+          source: 'ov-base',
+          'source-layer': 'land_cover',
+          paint: {
+            'fill-color': [
+              'match', ['get', 'subtype'],
+              'forest', '#79d47e',
+              'grass', '#a0e18c',
+              'shrub', '#a8d890',
+              'crop', '#fdf285',
+              'barren', '#C8C0A8',
+              'wetland', '#96fcfe',
+              'moss', '#a0d8a0',
+              'urban_vegetation', '#88cc80',
+              'snow', '#E8E8F0',
+              'ice', '#E0E4F0',
+              'transparent',
+            ],
+            'fill-opacity': [
+              'interpolate', ['linear'], ['zoom'],
+              4, 0.40,
+              8, 0.35,
+              12, 0.20,
+            ],
+          },
+        },
+
+        // 4. Land use — human land use polygons (subtle tint)
+        {
+          id: 'land-use',
+          type: 'fill',
+          source: 'ov-base',
+          'source-layer': 'land_use',
+          paint: {
+            'fill-color': [
+              'match', ['get', 'subtype'],
+              'residential', '#d49aaa',
+              'commercial', '#64b3c9',
+              'industrial', '#B898B8',
+              'recreation', '#79d47e',
+              'education', '#90bcd8',
+              'hospital', '#C0A8B8',
+              'military', '#B0A890',
+              'cemetery', '#A8B898',
+              'transportation', '#C8C0B0',
+              'religious', '#C0B8A8',
+              'transparent',
+            ],
+            'fill-opacity': [
+              'interpolate', ['linear'], ['zoom'],
+              8, 0.15,
+              12, 0.10,
+              14, 0.06,
+            ],
+          },
+        },
+
+        // 5. Water polygons — light tint below deck.gl (just to mask terrain under lakes)
+        {
+          id: 'water-below',
           type: 'fill',
           source: 'ov-base',
           'source-layer': 'water',
           filter: ['==', ['geometry-type'], 'Polygon'],
           paint: {
-            'fill-color': '#3E6B8A',
-            'fill-opacity': 1,
+            'fill-color': '#d0f4f6',
+            'fill-opacity': 0.6,
           },
         },
 
-        // 3. Water lines — rivers, streams, canals
-        {
-          id: 'water-line',
-          type: 'line',
-          source: 'ov-base',
-          'source-layer': 'water',
-          filter: ['==', ['geometry-type'], 'LineString'],
-          paint: {
-            'line-color': '#3E6B8A',
-            'line-width': [
-              'interpolate', ['exponential', 1.6], ['zoom'],
-              8, 0.5,
-              10, 1.5,
-              14, 4,
-              18, 12,
-            ],
-            'line-opacity': 0.8,
-          },
-        },
-
-        // 4. Admin boundaries — region/county (dashed)
+        // 6. Admin boundaries — region/county (dashed)
         {
           id: 'admin-region',
           type: 'line',
@@ -76,19 +139,19 @@ export function createMap(container: string): maplibregl.Map {
             ['==', ['get', 'subtype'], 'county'],
           ],
           paint: {
-            'line-color': '#D8D0C4',
+            'line-color': '#9A9080',
             'line-width': [
               'interpolate', ['linear'], ['zoom'],
               6, 0.4,
               10, 0.8,
               13, 1.2,
             ],
-            'line-opacity': 0.25,
+            'line-opacity': 0.30,
             'line-dasharray': [6, 3],
           },
         },
 
-        // 5. Admin boundaries — locality/municipality (subtle solid)
+        // 7. Admin boundaries — locality/municipality
         {
           id: 'admin-locality',
           type: 'line',
@@ -102,65 +165,140 @@ export function createMap(container: string): maplibregl.Map {
             ['==', ['get', 'subtype'], 'municipality'],
           ],
           paint: {
-            'line-color': '#E0D9CC',
+            'line-color': '#8A8070',
             'line-width': [
               'interpolate', ['linear'], ['zoom'],
               9, 0.2,
               12, 0.5,
               14, 0.8,
             ],
-            'line-opacity': 0.2,
+            'line-opacity': 0.25,
           },
         },
 
-        // 6. Railway ghost layer — infrastructure skeleton
+        // ════════════════════════════════════════
+        // DECK.GL ANCHOR — hex layer (invisible)
+        // deck.gl renders here with interleaved: true
+        // ════════════════════════════════════════
+        {
+          id: 'hex',
+          type: 'fill',
+          source: 'kontur',
+          'source-layer': 'kpop',
+          paint: { 'fill-opacity': 0 },
+        },
+
+        // ════════════════════════════════════════
+        // ABOVE DECK.GL (after hex anchor)
+        // Water fills, roads, and labels ON TOP of glyphs
+        // ════════════════════════════════════════
+
+        // 8. Water fill — added dynamically in main.ts AFTER deck.gl overlay
+        //    so it renders above all glyphs
+
+        // 9. Motorway/trunk — bold dark lines (visible from z7)
+        {
+          id: 'roads-motorway',
+          type: 'line',
+          source: 'ov-trans',
+          'source-layer': 'segment',
+          minzoom: 7,
+          filter: [
+            'any',
+            ['==', ['get', 'class'], 'motorway'],
+            ['==', ['get', 'class'], 'trunk'],
+          ],
+          paint: {
+            'line-color': '#2A2A2A',
+            'line-width': [
+              'interpolate', ['exponential', 1.5], ['zoom'],
+              7, 0.4,
+              9, 1.0,
+              11, 2.0,
+              13, 3.5,
+              15, 5,
+            ],
+            'line-opacity': [
+              'interpolate', ['linear'], ['zoom'],
+              7, 0.35,
+              9, 0.65,
+              11, 0.75,
+            ],
+          },
+        },
+
+        // 10. Primary roads
+        {
+          id: 'roads-primary',
+          type: 'line',
+          source: 'ov-trans',
+          'source-layer': 'segment',
+          minzoom: 8,
+          filter: ['==', ['get', 'class'], 'primary'],
+          paint: {
+            'line-color': '#3A3A3A',
+            'line-width': [
+              'interpolate', ['exponential', 1.5], ['zoom'],
+              8, 0.3,
+              10, 0.8,
+              12, 1.5,
+              14, 2.5,
+            ],
+            'line-opacity': [
+              'interpolate', ['linear'], ['zoom'],
+              8, 0.30,
+              10, 0.55,
+              12, 0.65,
+            ],
+          },
+        },
+
+        // 11. Secondary + tertiary roads
+        {
+          id: 'roads-secondary',
+          type: 'line',
+          source: 'ov-trans',
+          'source-layer': 'segment',
+          minzoom: 10,
+          filter: [
+            'any',
+            ['==', ['get', 'class'], 'secondary'],
+            ['==', ['get', 'class'], 'tertiary'],
+          ],
+          paint: {
+            'line-color': '#4A4A4A',
+            'line-width': [
+              'interpolate', ['linear'], ['zoom'],
+              10, 0.2,
+              12, 0.6,
+              14, 1.2,
+            ],
+            'line-opacity': 0.40,
+          },
+        },
+
+        // 12. Railway — purple/violet dashed
         {
           id: 'railway',
           type: 'line',
           source: 'ov-trans',
           'source-layer': 'segment',
           minzoom: 8,
-          paint: {
-            'line-color': '#D8D0C4',
-            'line-width': [
-              'interpolate', ['linear'], ['zoom'],
-              8, 0.3,
-              12, 0.8,
-              14, 1.2,
-            ],
-            'line-opacity': 0.15,
-            'line-dasharray': [6, 3],
-          },
           filter: ['==', ['get', 'class'], 'rail'],
-        },
-
-        // 7. Roads — warm paper tone
-        {
-          id: 'roads',
-          type: 'line',
-          source: 'ov-trans',
-          'source-layer': 'segment',
-          minzoom: 10,
           paint: {
-            'line-color': '#E0D9CC',
+            'line-color': '#7B52AE',
             'line-width': [
               'interpolate', ['linear'], ['zoom'],
-              10, 0.15,
-              13, 0.5,
-              15, 1,
+              8, 0.4,
+              12, 1.0,
+              14, 1.5,
             ],
             'line-opacity': 0.35,
+            'line-dasharray': [6, 3],
           },
-          filter: [
-            'any',
-            ['==', ['get', 'class'], 'primary'],
-            ['==', ['get', 'class'], 'secondary'],
-            ['==', ['get', 'class'], 'motorway'],
-            ['==', ['get', 'class'], 'tertiary'],
-          ],
         },
 
-        // 8. Labels — locality (city/town)
+        // 13. Labels — locality (city/town)
         {
           id: 'label-locality',
           type: 'symbol',
@@ -204,7 +342,7 @@ export function createMap(container: string): maplibregl.Map {
           },
         },
 
-        // 9. Labels — district/borough/suburb
+        // 14. Labels — district/borough/suburb
         {
           id: 'label-district',
           type: 'symbol',
@@ -247,7 +385,7 @@ export function createMap(container: string): maplibregl.Map {
           },
         },
 
-        // 10. Labels — neighbourhood
+        // 15. Labels — neighbourhood
         {
           id: 'label-neighbourhood',
           type: 'symbol',
@@ -283,15 +421,6 @@ export function createMap(container: string): maplibregl.Map {
             'text-halo-color': 'rgba(250,250,246,0.6)',
             'text-halo-width': 1,
           },
-        },
-
-        // 11. Invisible hex (for deck.gl reference)
-        {
-          id: 'hex',
-          type: 'fill',
-          source: 'kontur',
-          'source-layer': 'stats',
-          paint: { 'fill-opacity': 0 },
         },
       ],
     },
