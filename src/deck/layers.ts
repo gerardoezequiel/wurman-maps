@@ -322,15 +322,25 @@ export function buildLayers(Z: number): Layer[] {
         data.forEach(normalizeFeature);
         data.forEach(applyCachedEnrichment);
 
-        // Deduplicate by H3 index
-        const allH3: PreparedFeature[] = [];
+        // Snap each cell to the square grid, then deduplicate by GRID CELL
+        // (not H3) so glyphs land on a regular Wurman raster — one glyph per
+        // grid cell, keeping the most-populated H3 cell that maps to it.
+        const byGrid = new Map<string, PreparedFeature>();
         for (const d of data) {
-          const idx = d.properties?.h3;
-          if (!idx || seenH3.has(idx as string)) continue;
-          seenH3.add(idx as string);
+          if (!d.properties?.h3) continue;
+          prep(d);
+          const key = d.__gkey;
+          if (!key || seenH3.has(key)) continue;
+          const ex = byGrid.get(key);
+          if (!ex || (d.properties.population || 0) > (ex.properties.population || 0)) {
+            byGrid.set(key, d);
+          }
+        }
+        const allH3: PreparedFeature[] = [];
+        for (const [key, d] of byGrid) {
+          seenH3.add(key);
           allH3.push(d);
         }
-        allH3.forEach(prep);
 
         // ── Data subsets ──
         const populated = allH3.filter((d) => (d.properties.population || 0) > 0);

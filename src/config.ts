@@ -89,11 +89,19 @@ export const MISREG = 1.2;
 export const CELL_M = 800;
 
 /**
- * Square grid cell size in meters.
- * H3 centroids are snapped to this regular grid so they render as
- * aligned rows and columns instead of an offset hex pattern.
+ * Square grid cell size in meters (drives glyph SIZE).
  */
 export const GRID_M = 870;
+
+/**
+ * Snap-grid cell size, in degrees of the Web Mercator screen lattice.
+ * H3 centroids are snapped to this regular grid (equal spacing in x = lng and
+ * y = mercator-projected lat) so glyphs align in clean horizontal rows and
+ * vertical columns — the Passonneau/Wurman & 300.000 Km/s square raster —
+ * instead of the offset, latitude-drifting H3 hex lattice. Smaller = denser/
+ * richer (more glyphs); larger = coarser. Tuned to ≈ H3 res-8 screen spacing.
+ */
+export const GRID_DEG = 0.0095;
 
 /** Land cover field colors — from palette */
 export const FC = {

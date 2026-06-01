@@ -1,6 +1,27 @@
 import { cellToLatLng } from 'h3-js';
-import { getBin, FC } from '../config';
+import { getBin, FC, GRID_DEG } from '../config';
 import type { RGB } from './types';
+
+/**
+ * Snap a lng/lat to a regular Web Mercator screen grid so glyphs render as
+ * aligned rows/columns (the Wurman / 300.000 Km/s square raster) rather than
+ * the offset H3 hex lattice. x = lng and y = mercator-y are both linear in
+ * screen space, so a fixed-degree grid is equally spaced on screen at every
+ * latitude. Returns the snapped [lng, lat, 0] and a stable integer grid key.
+ */
+const MERC_MAX_LAT = 85.0511287798066;
+function mercY(lat: number): number {
+  const clamped = Math.max(-MERC_MAX_LAT, Math.min(MERC_MAX_LAT, lat));
+  return (Math.log(Math.tan(Math.PI / 4 + (clamped * Math.PI) / 360)) * 180) / Math.PI;
+}
+function invMercY(y: number): number {
+  return (Math.atan(Math.exp((y * Math.PI) / 180)) * 360) / Math.PI - 90;
+}
+function snapToGrid(lng: number, lat: number): { pos: [number, number, number]; key: string } {
+  const ix = Math.round(lng / GRID_DEG);
+  const iy = Math.round(mercY(lat) / GRID_DEG);
+  return { pos: [ix * GRID_DEG, invMercY(iy * GRID_DEG), 0], key: `${ix}:${iy}` };
+}
 
 export type LandUse = 'residential' | 'green' | 'commercial' | 'industrial' | 'institutional' | 'water';
 
@@ -97,6 +118,7 @@ export type GreenSub = 'forest' | 'park' | 'grass';
 export interface PreparedFeature {
   properties: KonturProps;
   __pos?: [number, number, number];
+  __gkey?: string;          // square-grid cell key (for regular-raster dedup)
   __cls?: LandUse;
   __bin?: number;
   __jx?: number;
@@ -454,9 +476,12 @@ export function prep(d: PreparedFeature): void {
   if (d.__c) return;
   try {
     const [lat, lng] = cellToLatLng(d.properties.h3!);
-    d.__pos = [lng, lat, 0];
+    const snapped = snapToGrid(lng, lat);
+    d.__pos = snapped.pos;
+    d.__gkey = snapped.key;
   } catch {
     d.__pos = [0, 0, 0];
+    d.__gkey = undefined;
   }
   d.__cls = classify(d.properties);
   d.__bin = getBin(d.properties.population || 0);
