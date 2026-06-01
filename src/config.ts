@@ -1,17 +1,30 @@
-/** Kontur bivariate MVT endpoint — H3 hexagons with 196 properties */
-export const TILES =
-  'https://disaster.ninja/active/api/tiles/bivariate/v1/{z}/{x}/{y}.mvt?indicatorsClass=general';
+const DEFAULT_POP_PMTILES =
+  'https://data.source.coop/smartmaps/foil4gr1/kpop.pmtiles';
+
+/**
+ * H3 population tiles — Kontur Population as PMTiles.
+ * Defaults to the source.coop mirror; override via VITE_POP_PMTILES_URL
+ * to point at a self-hosted dataset (e.g. wurman_cities.pmtiles on R2/CloudFront).
+ */
+export const TILES_PMTILES = import.meta.env.VITE_POP_PMTILES_URL || DEFAULT_POP_PMTILES;
+
+/**
+ * Dummy URL template for deck.gl MVTLayer — intercepted by custom fetch
+ * that reads from TILES_PMTILES. The {z}/{x}/{y} are parsed by the fetch.
+ */
+export const TILES = `${TILES_PMTILES}/{z}/{x}/{y}.mvt`;
 
 /** Overture Maps PMTiles base layers (CloudFront CDN) */
 export const OVERTURE = 'https://d3c1b7bog2u1nn.cloudfront.net/2025-10-22';
 
-/** Color palette */
+/** Color palette — #bf3d55 #79d47e #fdf285 #64b3c9 #96fcfe #0000f5 */
 export const COL = {
-  mauve:   [176, 112, 128] as const,
-  crimson: [194, 56, 90] as const,
-  green:   [72, 168, 69] as const,
+  mauve:   [160, 90, 110] as const,
+  crimson: [191, 61, 85] as const,   // #bf3d55
+  green:   [121, 212, 126] as const, // #79d47e
   indigo:  [43, 33, 80] as const,
-  blue:    [62, 107, 138] as const,
+  blue:    [100, 179, 201] as const, // #64b3c9
+  cyan:    [150, 252, 254] as const, // #96fcfe
 };
 
 /** Population bins — Wurman-style discrete size classes */
@@ -62,17 +75,25 @@ export const CITIES: readonly City[] = [
 
 /** Constants */
 export const SAT = 3000;
-export const GRAIN = 0.40;
 export const MISREG = 1.2;
 export const CELL_M = 800;
 
-/** Land cover field colors */
+/**
+ * Square grid cell size in meters.
+ * H3 centroids are snapped to this regular grid so they render as
+ * aligned rows and columns instead of an offset hex pattern.
+ */
+export const GRID_M = 870;
+
+/** Land cover field colors — from palette */
 export const FC = {
-  forest: [88, 128, 88] as const,
-  crop:   [170, 150, 68] as const,
-  water:  [88, 125, 150] as const,
-  grass:  [125, 155, 105] as const,
-  urban:  [165, 138, 120] as const,
-  bare:   [160, 150, 128] as const,
-  mixed:  [150, 142, 126] as const,
+  crop:   [253, 242, 133] as const,  // #fdf285 — yellow agriculture
+  urban:  [210, 130, 155] as const,  // muted crimson — urban fabric
+  trans:  [235, 195, 155] as const,  // warm peach — transitional
+  forest: [121, 212, 126] as const,  // #79d47e — green forest
+  grass:  [160, 225, 140] as const,  // lighter green — grassland
+  water:  [150, 252, 254] as const,  // #96fcfe — cyan water
+  bare:   [195, 190, 180] as const,  // light grey — rocky/bare
+  snow:   [240, 240, 245] as const,  // near-white — snow/ice
+  mixed:  [210, 200, 180] as const,  // warm grey fallback
 };

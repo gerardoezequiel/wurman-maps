@@ -1,6 +1,6 @@
 import type maplibregl from 'maplibre-gl';
 import { MapboxOverlay } from '@deck.gl/mapbox';
-import { buildLayers, clearSeen } from './layers';
+import { buildLayers, clearSeen, setMapRef, setEnrichCallback } from './layers';
 
 let overlay: MapboxOverlay | null = null;
 let pending = false;
@@ -18,6 +18,8 @@ function refresh(): void {
 
 /** Initialize deck.gl overlay on the MapLibre map */
 export function setupOverlay(map: maplibregl.Map): void {
+  setMapRef(map);
+  setEnrichCallback(() => refresh());
   Z = map.getZoom();
 
   overlay = new MapboxOverlay({

@@ -4,11 +4,14 @@ import type { RGB } from './types';
 
 export type LandUse = 'residential' | 'green' | 'commercial' | 'industrial' | 'institutional' | 'water';
 
-/** Kontur MVT feature properties (partial) */
+/** Kontur MVT feature properties — expanded for full 196-property dataset */
 export interface KonturProps {
   h3?: string;
   population?: number;
   area_km2?: number;
+  populated_area_km2?: number;
+
+  // Land cover fractions
   builtup?: number;
   residential?: number;
   forest?: number;
@@ -23,21 +26,73 @@ export interface KonturProps {
   moss_lichen?: number;
   snow_ice?: number;
   industrial_area?: number;
+
+  // Vegetation & terrain
+  avg_ndvi?: number;
+  avg_elevation_gebco?: number;
+  avg_slope_gebco?: number;
+  avg_forest_canopy_height?: number;
+  max_forest_canopy_height?: number;
+
+  // Building morphology
+  ghs_avg_building_height?: number;
+  ghs_max_building_height?: number;
+  avg_osm_building_levels?: number;
+  max_osm_building_levels?: number;
+  total_building_count?: number;
+  building_count?: number;
+
+  // Night lights
+  night_lights_intensity?: number;
+
+  // Transport infrastructure
+  total_road_length?: number;
+  motor_vehicle_road_length?: number;
+  highway_length?: number;
+  railway_length?: number;
+  pipeline_length?: number;
+  powerlines?: number;
+
+  // OSM facility counts
   osm_schools_count?: number;
   osm_universities_count?: number;
   osm_colleges_count?: number;
   osm_kindergartens_count?: number;
+  osm_hospitals_count?: number;
+  osm_clinics_count?: number;
+  osm_hotels_count?: number;
+  osm_entertainment_venues_count?: number;
+  osm_heritage_sites_count?: number;
+  osm_airports_count?: number;
+  osm_ports_count?: number;
+  osm_power_plants_count?: number;
+  osm_railway_stations_count?: number;
+  osm_public_transport_stops_count?: number;
+  osm_car_parkings_capacity?: number;
+  osm_fire_stations_count?: number;
+  osm_police_stations_count?: number;
+
+  // Foursquare / commercial POI
   foursquare_os_places_count?: number;
   eatery_count?: number;
   dining_and_drinking_fsq_count?: number;
   retail_fsq_count?: number;
-  night_lights_intensity?: number;
-  ghs_avg_building_height?: number;
-  total_building_count?: number;
-  building_count?: number;
-  total_road_length?: number;
+  arts_and_entertainment_fsq_count?: number;
+  sports_and_recreation_fsq_count?: number;
+  community_and_government_fsq_count?: number;
+  business_and_professional_services_fsq_count?: number;
+  health_and_medicine_fsq_count?: number;
+  travel_and_transportation_fsq_count?: number;
+
+  // kpop.pmtiles uses 'pop' instead of 'population'
+  pop?: number;
   [key: string]: unknown;
 }
+
+export type HatchType = 'hatch_urban' | 'hatch_trans' | 'hatch_crop' | 'hatch_forest' | 'hatch_bare' | 'hatch_water' | 'none';
+
+/** Green sub-classification: which shape to use for green cells */
+export type GreenSub = 'forest' | 'park' | 'grass';
 
 export interface PreparedFeature {
   properties: KonturProps;
@@ -51,51 +106,358 @@ export interface PreparedFeature {
   __jx3?: number;
   __jy3?: number;
   __field?: RGB;
+  __hatch?: HatchType;
+  __greenSub?: GreenSub;
+  __isTerrain?: boolean;   // High slope/elevation → tiny dot mode
+  __isOcean?: boolean;     // Ocean water cell → cyan dot texture
   __c?: boolean;
 }
 
-/** Classify land use from Kontur properties */
+/**
+ * Classify land use from Kontur properties.
+ *
+ * Key distinctions:
+ * - Cropland is NOT green. Cropland = agriculture (yellow bg, rural x-marks).
+ * - Green = only actual parks, forests, natural vegetation.
+ * - Uses NDVI, building height, transport infra, detailed POI categories.
+ */
 export function classify(p: KonturProps): LandUse {
+  // ── Aggregate land cover fractions ──
   const wa = (p.permanent_water || 0) + (p.wetland || 0);
-  if (wa > 0.35) return 'water';
-
   const fo = (p.forest || 0) + (p.evergreen_needle_leaved_forest || 0) + (p.unknown_forest || 0);
   const cr = p.cropland || 0;
   const gr = (p.herbage || 0) + (p.shrubs || 0);
-  const bu = (p.builtup || 0) + (p.residential || 0);
-  if ((fo + gr + cr) > 0.25 && bu < 0.30) return 'green';
+  const bu = p.builtup || 0;
+  const re = p.residential || 0;
+  const ind = p.industrial_area || 0;
 
-  if ((p.industrial_area || 0) > 0.04) return 'industrial';
+  // ── Vegetation & terrain ──
+  const ndvi = p.avg_ndvi || 0;
+  const canopy = p.avg_forest_canopy_height || 0;
 
-  const inst = (p.osm_schools_count || 0) + (p.osm_universities_count || 0) +
-               (p.osm_colleges_count || 0) + (p.osm_kindergartens_count || 0);
-  if (inst > 0) return 'institutional';
+  // ── Building morphology ──
+  const htAvg = p.ghs_avg_building_height || 0;
+  const htMax = p.ghs_max_building_height || 0;
+  const maxLvl = p.max_osm_building_levels || 0;
+  const bldg = p.total_building_count || p.building_count || 0;
 
-  const comm = p.foursquare_os_places_count || 0;
-  const eat = (p.eatery_count || 0) + (p.dining_and_drinking_fsq_count || 0) +
-              (p.retail_fsq_count || 0);
-  if (comm > 4 || eat > 1) return 'commercial';
+  // ── Infrastructure ──
+  const nl = p.night_lights_intensity || 0;
+  const railLen = p.railway_length || 0;
+  const roadLen = p.motor_vehicle_road_length || 0;
+  const pipeLen = p.pipeline_length || 0;
+  const pwrLines = p.powerlines || 0;
 
+  // ── Education & civic POI ──
+  const schools = (p.osm_schools_count || 0) + (p.osm_universities_count || 0) +
+                  (p.osm_colleges_count || 0) + (p.osm_kindergartens_count || 0);
+  const hospitals = (p.osm_hospitals_count || 0) + (p.osm_clinics_count || 0);
+  const civic = (p.osm_fire_stations_count || 0) + (p.osm_police_stations_count || 0);
+  const govFsq = p.community_and_government_fsq_count || 0;
+  const healthFsq = p.health_and_medicine_fsq_count || 0;
+
+  // ── Commercial POI ──
+  const poi = p.foursquare_os_places_count || 0;
+  const eat = (p.eatery_count || 0) + (p.dining_and_drinking_fsq_count || 0);
+  const retail = p.retail_fsq_count || 0;
+  const arts = p.arts_and_entertainment_fsq_count || 0;
+  const biz = p.business_and_professional_services_fsq_count || 0;
+  const hotels = p.osm_hotels_count || 0;
+  const entertainment = p.osm_entertainment_venues_count || 0;
+  const sports = p.sports_and_recreation_fsq_count || 0;
+
+  // ── Heavy infrastructure ──
+  const airports = p.osm_airports_count || 0;
+  const ports = p.osm_ports_count || 0;
+  const powerPlants = p.osm_power_plants_count || 0;
+
+  // ── Composite scores ──
+  const commercialPoi = eat + retail + arts + biz + hotels + entertainment;
+  const institutionalScore = schools * 2 + hospitals * 3 + civic + govFsq + healthFsq;
+  const heavyInfra = airports + ports + powerPlants;
+
+  // ═══ 1. WATER ═══
+  if (wa > 0.30) return 'water';
+
+  // ═══ 2. GREEN — forests, parks, natural vegetation (NOT cropland) ═══
+  // Pure forest: high forest fraction or tall canopy, low built-up
+  if (fo > 0.30 && bu < 0.15) return 'green';
+  if (canopy > 8 && fo > 0.15 && bu < 0.20) return 'green';
+
+  // NDVI-confirmed vegetation: high NDVI + low cropland + low built-up
+  if (ndvi > 0.45 && fo > 0.10 && cr < 0.10 && bu < 0.15) return 'green';
+
+  // Mixed natural: forest + grass dominant, cropland low, not built-up
+  if ((fo + gr) > 0.35 && cr < 0.10 && bu < 0.20) return 'green';
+
+  // Urban parks: moderate forest within built-up fabric (NOT agriculture)
+  if (fo > 0.12 && (bu + re) > 0.05 && (bu + re) < 0.35 && cr < 0.08 && ndvi > 0.25) return 'green';
+
+  // Sports/recreation areas with green signal
+  if (sports > 2 && ndvi > 0.30 && cr < 0.10 && bu < 0.30) return 'green';
+
+  // Natural grassland: grass-dominant, not farmed, not built
+  if (gr > 0.30 && cr < 0.10 && bu < 0.10) return 'green';
+
+  // ═══ 3. INDUSTRIAL ═══
+  // Heavy infrastructure: airports, ports, power plants
+  if (heavyInfra > 0 && re < 0.10) return 'industrial';
+
+  // Strong industrial land cover signal
+  if (ind > 0.10) return 'industrial';
+
+  // Moderate industrial + low residential + some built-up
+  if (ind > 0.04 && re < 0.08 && bu > 0.08) return 'industrial';
+
+  // Pipeline/powerline corridors with industrial character
+  if ((pipeLen > 500 || pwrLines > 3) && ind > 0.02 && re < 0.05) return 'industrial';
+
+  // Night-lit non-residential zones with transport infra → logistics
+  if (ind > 0.02 && nl > 18 && re < 0.05 && poi < 3 && (roadLen > 500 || railLen > 200)) return 'industrial';
+
+  // Large parking + industrial → distribution centers
+  if ((p.osm_car_parkings_capacity || 0) > 200 && ind > 0.02 && re < 0.08) return 'industrial';
+
+  // ═══ 4. INSTITUTIONAL ═══
+  // Strong institutional composite (hospitals weigh heavily)
+  if (institutionalScore >= 6) return 'institutional';
+
+  // Multiple schools or hospital presence
+  if (schools >= 2) return 'institutional';
+  if (hospitals >= 1 && (bu + re) > 0.05) return 'institutional';
+
+  // Heritage/civic concentration
+  if ((p.osm_heritage_sites_count || 0) >= 2 && commercialPoi < 6) return 'institutional';
+
+  // Single school in a built-up area with low commercial activity
+  if (schools >= 1 && (bu + re) > 0.08 && commercialPoi < 4) return 'institutional';
+
+  // Government/civic FSQ concentration
+  if ((govFsq + healthFsq) >= 3 && commercialPoi < 5) return 'institutional';
+
+  // ═══ 5. COMMERCIAL ═══
+  // CBD: tall buildings + multi-story + dense POI
+  if (htAvg > 15 && maxLvl > 6 && poi > 5) return 'commercial';
+
+  // High-rise commercial core
+  if (htMax > 40 && re < 0.15) return 'commercial';
+
+  // High POI density = commercial district
+  if (poi > 10 || commercialPoi > 6) return 'commercial';
+
+  // Hotel/tourism districts
+  if (hotels > 2 || (hotels > 0 && entertainment > 1)) return 'commercial';
+
+  // Moderate POIs + tall buildings = commercial core
+  if ((poi > 4 || eat > 1) && htAvg > 8) return 'commercial';
+
+  // Business services concentration
+  if (biz > 2 && bldg > 3 && re < 0.20) return 'commercial';
+
+  // Tall buildings + bright night lights + low residential
+  if (htAvg > 14 && nl > 12 && re < 0.15) return 'commercial';
+
+  // Rail station hubs with commercial activity
+  if ((p.osm_railway_stations_count || 0) > 0 && commercialPoi > 3) return 'commercial';
+
+  // Dense POI zone even without extreme counts
+  if (poi > 6 && bldg > 4) return 'commercial';
+
+  // ═══ 6. RESIDENTIAL (default for populated built-up areas) ═══
   return 'residential';
 }
 
-/** Dominant land cover color */
+/**
+ * Classified land cover color — vivid categorical raster.
+ * Uses NDVI, building morphology, and terrain for sharper discrimination.
+ * Matches reference: yellow agriculture, pink urban, green forest,
+ * peach transitional, grey bare/rocky, cyan water.
+ */
 export function fieldRGB(p: KonturProps): RGB {
   const fo = (p.forest || 0) + (p.evergreen_needle_leaved_forest || 0) + (p.unknown_forest || 0);
   const cr = p.cropland || 0;
   const wa = (p.permanent_water || 0) + (p.wetland || 0);
   const gr = (p.herbage || 0) + (p.shrubs || 0);
+  const bu = p.builtup || 0;
+  const re = p.residential || 0;
+  const ba = (p.bare_vegetation || 0) + (p.moss_lichen || 0);
+  const sn = p.snow_ice || 0;
+  const ind = p.industrial_area || 0;
+  const ndvi = p.avg_ndvi || 0;
+  const slope = p.avg_slope_gebco || 0;
+
+  // Water — clear priority
+  if (wa > 0.15) return FC.water;
+
+  // Snow/ice
+  if (sn > 0.15) return FC.snow;
+
+  // Dense urban fabric — pink/magenta
+  // Strong built-up OR low-NDVI dense zone with buildings
+  if ((bu + re) > 0.35) return FC.urban;
+  if ((bu + re) > 0.25 && ndvi < 0.20) return FC.urban;
+
+  // Transitional urban-agricultural — peach/salmon
+  if ((bu + re) > 0.10 && cr > 0.10) return FC.trans;
+  if ((bu + re) > 0.15 && (cr + gr) > 0.08) return FC.trans;
+
+  // Industrial land within urban matrix
+  if (ind > 0.05 && bu > 0.06) return FC.trans;
+
+  // Forest dominant — bright green
+  // NDVI-boosted: confirmed dense vegetation
+  if (fo > 0.20 && ndvi > 0.30) return FC.forest;
+  if (fo > 0.25) return FC.forest;
+
+  // Cropland dominant — bright yellow (agriculture)
+  if (cr > 0.20) return FC.crop;
+
+  // Mixed cropland + grass — still yellow
+  if (cr > 0.08 && gr > 0.08) return FC.crop;
+
+  // Natural grassland — yellow-green
+  // NDVI-confirmed: moderate vegetation, not cropland
+  if (gr > 0.15 && ndvi > 0.25 && cr < 0.10) return FC.grass;
+  if (gr > 0.20) return FC.grass;
+
+  // Light urban — pink at lower threshold
+  if ((bu + re) > 0.10) return FC.urban;
+
+  // Bare rock/sparse — grey
+  // Steep slopes with low vegetation → mountain terrain
+  if (ba > 0.12) return FC.bare;
+  if (slope > 8 && ndvi < 0.15 && fo < 0.05) return FC.bare;
+
+  // Light forest
+  if (fo > 0.10) return FC.forest;
+
+  // Light cropland
+  if (cr > 0.05) return FC.crop;
+
+  // Low NDVI + no clear land cover → bare/arid
+  if (ndvi < 0.10 && (bu + re) < 0.05 && fo < 0.05 && cr < 0.05) return FC.bare;
+
+  return FC.mixed;
+}
+
+/** Determine hatch pattern based on land cover composition + NDVI/terrain */
+export function hatchType(p: KonturProps): HatchType {
+  const fo = (p.forest || 0) + (p.evergreen_needle_leaved_forest || 0) + (p.unknown_forest || 0);
+  const cr = p.cropland || 0;
+  const wa = (p.permanent_water || 0) + (p.wetland || 0);
+  const bu = p.builtup || 0;
+  const re = p.residential || 0;
+  const ba = (p.bare_vegetation || 0) + (p.moss_lichen || 0);
+  const ind = p.industrial_area || 0;
+  const ndvi = p.avg_ndvi || 0;
+  const slope = p.avg_slope_gebco || 0;
+
+  if (wa > 0.15) return 'hatch_water';
+
+  // Dense urban: strong built-up or low-NDVI developed
+  if ((bu + re) > 0.28) return 'hatch_urban';
+  if ((bu + re) > 0.18 && ndvi < 0.18) return 'hatch_urban';
+
+  // Transitional: urban-rural fringe, industrial-residential mix
+  if ((bu + re) > 0.10 && cr > 0.08) return 'hatch_trans';
+  if (ind > 0.04 && bu > 0.06) return 'hatch_trans';
+
+  // Forest: high canopy or strong forest fraction
+  if (fo > 0.18 && ndvi > 0.30) return 'hatch_forest';
+  if (fo > 0.20) return 'hatch_forest';
+
+  // Cropland
+  if (cr > 0.15) return 'hatch_crop';
+
+  // Bare: exposed terrain, steep slopes with low vegetation
+  if (ba > 0.12) return 'hatch_bare';
+  if (slope > 8 && ndvi < 0.15 && fo < 0.05) return 'hatch_bare';
+
+  // Light urban
+  if ((bu + re) > 0.10) return 'hatch_urban';
+
+  // Light forest
+  if (fo > 0.08) return 'hatch_forest';
+
+  // Light cropland
+  if (cr > 0.05) return 'hatch_crop';
+
+  // Arid/desert: very low NDVI, no land cover
+  if (ndvi < 0.10 && (bu + re) < 0.05 && fo < 0.05) return 'hatch_bare';
+
+  return 'none';
+}
+
+/**
+ * Classify green cells into subtypes for different glyph rendering:
+ * - forest: dense forest / tall canopy → cross_plus (+)
+ * - park: urban parks / recreation / sparse forest in built-up areas → thin_ring (green circle)
+ * - grass: natural grassland / meadows → green sm_dot stipple
+ */
+export function greenSubtype(p: KonturProps): GreenSub {
+  const fo = (p.forest || 0) + (p.evergreen_needle_leaved_forest || 0) + (p.unknown_forest || 0);
+  const gr = (p.herbage || 0) + (p.shrubs || 0);
+  const bu = (p.builtup || 0) + (p.residential || 0);
+  const canopy = p.avg_forest_canopy_height || 0;
+  const sports = p.sports_and_recreation_fsq_count || 0;
+
+  // Urban parks: green space within built-up matrix
+  if (bu > 0.05 && fo < 0.25 && (sports > 0 || bu > 0.10)) return 'park';
+  // Tall canopy or dense forest → forest
+  if (fo > 0.25 || canopy > 6) return 'forest';
+  // Natural grassland / meadows
+  if (gr > fo * 1.5) return 'grass';
+  // Default to forest for anything with decent tree cover
+  if (fo > 0.10) return 'forest';
+  return 'grass';
+}
+
+/**
+ * Detect terrain cells that should render as tiny dots instead of large squares.
+ * High slope, mountain terrain, elevated areas with natural cover.
+ */
+export function isTerrain(p: KonturProps): boolean {
+  const slope = p.avg_slope_gebco || 0;
+  const elev = p.avg_elevation_gebco || 0;
+  const fo = (p.forest || 0) + (p.evergreen_needle_leaved_forest || 0) + (p.unknown_forest || 0);
   const bu = (p.builtup || 0) + (p.residential || 0);
   const ba = (p.bare_vegetation || 0) + (p.moss_lichen || 0);
+  const pop = p.population || 0;
 
-  const mx = Math.max(fo, cr, wa, gr, bu, ba, 0.01);
-  if (mx === fo) return FC.forest;
-  if (mx === cr) return FC.crop;
-  if (mx === wa) return FC.water;
-  if (mx === gr) return FC.grass;
-  if (mx === bu) return FC.urban;
-  if (mx === ba) return FC.bare;
-  return FC.mixed;
+  // Steep slopes with low urban development
+  if (slope > 6 && bu < 0.15 && pop < 200) return true;
+  // High elevation with natural cover
+  if (elev > 300 && bu < 0.10 && (fo > 0.10 || ba > 0.10)) return true;
+  // Mountain terrain: steep + bare
+  if (slope > 4 && ba > 0.15 && bu < 0.08) return true;
+  return false;
+}
+
+/**
+ * Detect ocean water cells (for tiny cyan dot texture).
+ * Ocean = water-dominant cell with no population, or empty cell
+ * where all land cover fractions are near zero (open ocean with no data).
+ */
+export function isOcean(p: KonturProps): boolean {
+  const wa = (p.permanent_water || 0) + (p.wetland || 0);
+  const bu = (p.builtup || 0) + (p.residential || 0);
+  const fo = (p.forest || 0) + (p.evergreen_needle_leaved_forest || 0);
+  const cr = p.cropland || 0;
+  const gr = (p.herbage || 0) + (p.shrubs || 0);
+  const ba = (p.bare_vegetation || 0) + (p.moss_lichen || 0);
+  const pop = p.population || 0;
+
+  // Classic ocean: high water, no development
+  if (wa > 0.30 && bu < 0.03 && pop === 0) return true;
+
+  // Empty ocean: virtually no land cover (Kontur may report zeros for open sea)
+  const totalLand = bu + fo + cr + gr + ba;
+  if (pop === 0 && totalLand < 0.05 && wa >= 0.05) return true;
+
+  // Near-empty cells dominated by water with negligible land signal
+  if (pop === 0 && wa > 0.15 && totalLand < 0.10) return true;
+
+  return false;
 }
 
 /** Deterministic hash for H3 index — returns [-1, 1] */
@@ -126,6 +488,10 @@ export function prep(d: PreparedFeature): void {
   d.__jx3 = h3hash(idx, 5);
   d.__jy3 = h3hash(idx, 6);
   d.__field = fieldRGB(d.properties);
+  d.__hatch = hatchType(d.properties);
+  if (d.__cls === 'green') d.__greenSub = greenSubtype(d.properties);
+  d.__isTerrain = isTerrain(d.properties);
+  d.__isOcean = isOcean(d.properties);
   d.__c = true;
 }
 
