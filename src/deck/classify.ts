@@ -139,7 +139,6 @@ export function classify(p: KonturProps): LandUse {
   const htAvg = p.ghs_avg_building_height || 0;
   const htMax = p.ghs_max_building_height || 0;
   const maxLvl = p.max_osm_building_levels || 0;
-  const bldg = p.total_building_count || p.building_count || 0;
 
   // ── Infrastructure ──
   const nl = p.night_lights_intensity || 0;
@@ -173,7 +172,6 @@ export function classify(p: KonturProps): LandUse {
 
   // ── Composite scores ──
   const commercialPoi = eat + retail + arts + biz + hotels + entertainment;
-  const institutionalScore = schools * 2 + hospitals * 3 + civic + govFsq + healthFsq;
   const heavyInfra = airports + ports + powerPlants;
 
   // ═══ 1. WATER ═══
@@ -219,49 +217,31 @@ export function classify(p: KonturProps): LandUse {
   if ((p.osm_car_parkings_capacity || 0) > 200 && ind > 0.02 && re < 0.08) return 'industrial';
 
   // ═══ 4. INSTITUTIONAL ═══
-  // Strong institutional composite (hospitals weigh heavily)
-  if (institutionalScore >= 6) return 'institutional';
+  // Calibrated for Overture Places density (denser than Kontur OSM counts):
+  // institutional only when education/health/civic POIs DOMINATE the local mix,
+  // so it reads as an accent (campuses, hospital complexes) not the whole map.
+  const instCount = schools + hospitals + civic;
+  const totalPoi = Math.max(poi, 1);
+  const instShare = instCount / totalPoi;
 
-  // Multiple schools or hospital presence
-  if (schools >= 2) return 'institutional';
-  if (hospitals >= 1 && (bu + re) > 0.05) return 'institutional';
-
-  // Heritage/civic concentration
+  // Education/health/civic dominate this cell's POI mix
+  if (instCount >= 5 && instShare > 0.28 && commercialPoi < poi * 0.5) return 'institutional';
+  // Large hospital complex
+  if (hospitals >= 6 && instShare > 0.18) return 'institutional';
+  // Education campus
+  if (schools >= 12 && commercialPoi < poi * 0.4) return 'institutional';
+  // Government / civic concentration with little commerce
+  if ((govFsq + healthFsq) >= 5 && commercialPoi < 8) return 'institutional';
   if ((p.osm_heritage_sites_count || 0) >= 2 && commercialPoi < 6) return 'institutional';
 
-  // Single school in a built-up area with low commercial activity
-  if (schools >= 1 && (bu + re) > 0.08 && commercialPoi < 4) return 'institutional';
-
-  // Government/civic FSQ concentration
-  if ((govFsq + healthFsq) >= 3 && commercialPoi < 5) return 'institutional';
-
   // ═══ 5. COMMERCIAL ═══
-  // CBD: tall buildings + multi-story + dense POI
-  if (htAvg > 15 && maxLvl > 6 && poi > 5) return 'commercial';
-
-  // High-rise commercial core
-  if (htMax > 40 && re < 0.15) return 'commercial';
-
-  // High POI density = commercial district
-  if (poi > 10 || commercialPoi > 6) return 'commercial';
-
-  // Hotel/tourism districts
-  if (hotels > 2 || (hotels > 0 && entertainment > 1)) return 'commercial';
-
-  // Moderate POIs + tall buildings = commercial core
-  if ((poi > 4 || eat > 1) && htAvg > 8) return 'commercial';
-
-  // Business services concentration
-  if (biz > 2 && bldg > 3 && re < 0.20) return 'commercial';
-
-  // Tall buildings + bright night lights + low residential
-  if (htAvg > 14 && nl > 12 && re < 0.15) return 'commercial';
-
-  // Rail station hubs with commercial activity
-  if ((p.osm_railway_stations_count || 0) > 0 && commercialPoi > 3) return 'commercial';
-
-  // Dense POI zone even without extreme counts
-  if (poi > 6 && bldg > 4) return 'commercial';
+  // Dense commercial cores (≈ top decile of POI density; medians ~34 places).
+  if (htAvg > 18 && maxLvl > 8 && poi > 60) return 'commercial';     // CBD with tall stock
+  if (htMax > 50 && re < 0.12) return 'commercial';                  // high-rise core
+  if (poi > 250 || commercialPoi > 80) return 'commercial';         // major commercial district
+  if ((eat + retail) > 55 && poi > 120) return 'commercial';        // retail/dining district
+  if (commercialPoi > 35 && commercialPoi > instCount * 2 && re < 0.30) return 'commercial';
+  if (hotels > 4 || (hotels > 1 && entertainment > 2)) return 'commercial'; // tourism core
 
   // ═══ 6. RESIDENTIAL (default for populated built-up areas) ═══
   return 'residential';

@@ -1,10 +1,20 @@
-const DEFAULT_POP_PMTILES =
-  'https://data.source.coop/smartmaps/foil4gr1/kpop.pmtiles';
+/**
+ * Self-hosted H3 res-8 dataset (population + Overture-derived land cover, land
+ * use, POIs) for the 10 city presets, built by data/build-h3.sql and served
+ * from public/. Fully self-contained — no third-party tile dependency.
+ */
+const DEFAULT_POP_PMTILES = '/wurman_cities.pmtiles';
 
 /**
- * H3 population tiles — Kontur Population as PMTiles.
- * Defaults to the source.coop mirror; override via VITE_POP_PMTILES_URL
- * to point at a self-hosted dataset (e.g. wurman_cities.pmtiles on R2/CloudFront).
+ * Population-only fallback: Kontur Population on source.coop. Used only if the
+ * self-hosted dataset is overridden away; land use then falls back to sampling
+ * the Overture basemap at runtime.
+ */
+export const KPOP_FALLBACK = 'https://data.source.coop/smartmaps/foil4gr1/kpop.pmtiles';
+
+/**
+ * Active H3 tile source. Override via VITE_POP_PMTILES_URL to point at a hosted
+ * copy (e.g. wurman_cities.pmtiles on R2/CloudFront).
  */
 export const TILES_PMTILES = import.meta.env.VITE_POP_PMTILES_URL || DEFAULT_POP_PMTILES;
 

@@ -220,7 +220,7 @@ function ringCentroid(ring: number[][]): [number, number] {
   return [cx / ring.length, cy / ring.length];
 }
 
-/** Normalize kpop features: map pop→population, derive h3 from geometry */
+/** Normalize tile features: map pop→population, derive h3, flag baked attributes. */
 function normalizeFeature(f: PreparedFeature): void {
   const p = f.properties;
   // Map kpop's 'pop' to 'population'
@@ -241,6 +241,12 @@ function normalizeFeature(f: PreparedFeature): void {
       }
       try { p.h3 = latLngToCell(lat, lng, 8); } catch { /* skip */ }
     }
+  }
+  // If the dataset already carries baked land-cover/POI attributes (the
+  // self-hosted wurman_cities.pmtiles), mark it pre-enriched so the Overture
+  // basemap-sampling fallback is skipped and fractions are not double-counted.
+  if ((p as any).__oe === undefined && (p.builtup !== undefined || p.forest !== undefined)) {
+    (p as any).__oe = 1;
   }
 }
 
