@@ -14,7 +14,9 @@ cover from Overture's `base/land_cover` theme (itself derived from ESA WorldCove
 brew install duckdb tippecanoe pmtiles
 node data/extract-population.mjs            # kpop z9 tiles → data/sources/population.csv
 duckdb wurman.db < data/build-cities.sql    # join Overture land cover/use/water/POIs → geojsonseq
-tippecanoe -o /tmp/wurman_cities.mbtiles -l kpop -Z2 -z9 \
+# Tile z9-only: deck.gl overzooms z9 for the z10-12 city views; a single zoom
+# level avoids duplicate ancestor tiles colliding with the H3 dedup.
+tippecanoe -o /tmp/wurman_cities.mbtiles -l kpop -Z9 -z9 \
   --no-feature-limit --no-tile-size-limit -r1 --no-line-simplification \
   -f data/sources/wurman_cities.geojsonseq
 pmtiles convert /tmp/wurman_cities.mbtiles public/wurman_cities.pmtiles

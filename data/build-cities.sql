@@ -14,7 +14,11 @@
 --
 -- Run:
 --   duckdb wurman.db < data/build-cities.sql
---   tippecanoe -o /tmp/wurman_cities.mbtiles -l kpop -Z2 -z9 \
+--   # Tile at z9 ONLY: the deck.gl MVTLayer overzooms z9 for the z10-12 city
+--   # views, and tiling at a single zoom avoids duplicate ancestor tiles that
+--   # would collide with the cross-tile H3 dedup (and leave deck stuck on a
+--   # coarse ancestor when switching cities).
+--   tippecanoe -o /tmp/wurman_cities.mbtiles -l kpop -Z9 -z9 \
 --     --no-feature-limit --no-tile-size-limit -r1 --no-line-simplification \
 --     -f data/sources/wurman_cities.geojsonseq
 --   pmtiles convert /tmp/wurman_cities.mbtiles public/wurman_cities.pmtiles
