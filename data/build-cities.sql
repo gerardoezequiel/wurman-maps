@@ -141,8 +141,11 @@ FROM cell_geom c JOIN water_raw w ON ST_Intersects(c.geom, w.geom)
 GROUP BY c.h3, c.cell_area;
 
 -- ── 5. Overture base/land_use → residential / industrial fraction ──
+-- NOTE: Overture tags industrial/commercial via `class`, not `subtype`
+-- (subtype='developed', class='industrial'|'commercial'|'retail'). Filtering on
+-- subtype='industrial' silently yields zero industrial cells.
 CREATE OR REPLACE TABLE lu_raw AS
-SELECT lower(subtype) AS subtype, geometry AS geom
+SELECT lower(subtype) AS subtype, lower(coalesce(class,'')) AS class, geometry AS geom
 FROM read_parquet('s3://overturemaps-us-west-2/release/2026-05-20.0/theme=base/type=land_use/*.parquet')
 WHERE (bbox.xmin BETWEEN -0.55 AND 0.34 AND bbox.ymin BETWEEN 51.28 AND 51.72)
    OR (bbox.xmin BETWEEN 1.85 AND 2.40 AND bbox.ymin BETWEEN 41.22 AND 41.58)
@@ -156,22 +159,23 @@ WHERE (bbox.xmin BETWEEN -0.55 AND 0.34 AND bbox.ymin BETWEEN 51.28 AND 51.72)
    OR (bbox.xmin BETWEEN 139.40 AND 140.00 AND bbox.ymin BETWEEN 35.45 AND 35.92);
 CREATE OR REPLACE TABLE lu_frac AS
 SELECT c.h3,
-  sum(CASE WHEN lu.subtype='residential' THEN ST_Area(ST_Intersection(c.geom, lu.geom)) ELSE 0 END)/c.cell_area AS residential,
-  sum(CASE WHEN lu.subtype='industrial' THEN ST_Area(ST_Intersection(c.geom, lu.geom)) ELSE 0 END)/c.cell_area AS industrial_area
+  least(1.0, sum(CASE WHEN lu.subtype='residential' OR lu.class='residential' THEN ST_Area(ST_Intersection(c.geom, lu.geom)) ELSE 0 END)/c.cell_area) AS residential,
+  least(1.0, sum(CASE WHEN lu.class='industrial' THEN ST_Area(ST_Intersection(c.geom, lu.geom)) ELSE 0 END)/c.cell_area) AS industrial_area
 FROM cell_geom c JOIN lu_raw lu ON ST_Intersects(c.geom, lu.geom)
 GROUP BY c.h3, c.cell_area;
 
 -- ── 6. Join everything on h3, emit centroids as GeoJSONSeq for tippecanoe ──
 CREATE OR REPLACE TABLE wurman_cells AS
 SELECT p.h3, p.population,
-  round(coalesce(lc.forest,0),3) AS forest,
-  round(coalesce(lc.herbage,0),3) AS herbage,
-  round(coalesce(lc.shrubs,0),3) AS shrubs,
-  round(coalesce(lc.cropland,0),3) AS cropland,
-  round(coalesce(lc.bare_vegetation,0),3) AS bare_vegetation,
-  round(coalesce(lc.wetland,0),3) AS wetland,
-  round(coalesce(w.permanent_water,0),3) AS permanent_water,
-  round(coalesce(b.builtup,0),3) AS builtup,
+  -- land-cover fractions clamped to 1.0 (overlapping source polygons sum >1)
+  least(1.0, round(coalesce(lc.forest,0),3)) AS forest,
+  least(1.0, round(coalesce(lc.herbage,0),3)) AS herbage,
+  least(1.0, round(coalesce(lc.shrubs,0),3)) AS shrubs,
+  least(1.0, round(coalesce(lc.cropland,0),3)) AS cropland,
+  least(1.0, round(coalesce(lc.bare_vegetation,0),3)) AS bare_vegetation,
+  least(1.0, round(coalesce(lc.wetland,0),3)) AS wetland,
+  least(1.0, round(coalesce(w.permanent_water,0),3)) AS permanent_water,
+  least(1.0, round(coalesce(b.builtup,0),3)) AS builtup,
   round(coalesce(lu.residential,0),3) AS residential,
   round(coalesce(lu.industrial_area,0),3) AS industrial_area,
   coalesce(poi.osm_schools_count,0) AS osm_schools_count,

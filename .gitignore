@@ -2,6 +2,9 @@ node_modules/
 dist/
 .DS_Store
 *.local
+.env
+.vercel
+.vscode/
 
 # session artifacts
 .playwright-mcp/

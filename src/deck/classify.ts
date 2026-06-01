@@ -494,7 +494,9 @@ export function prep(d: PreparedFeature): void {
   d.__jy3 = h3hash(idx, 6);
   d.__field = fieldRGB(d.properties);
   d.__hatch = hatchType(d.properties);
-  if (d.__cls === 'green') d.__greenSub = greenSubtype(d.properties);
+  // Always (re)set so a cell that reclassifies away from green after enrichment
+  // does not retain a stale green sub-type.
+  d.__greenSub = d.__cls === 'green' ? greenSubtype(d.properties) : undefined;
   d.__isTerrain = isTerrain(d.properties);
   d.__isOcean = isOcean(d.properties);
   d.__c = true;
