@@ -13,10 +13,28 @@ const DEFAULT_POP_PMTILES = '/wurman_cities.pmtiles';
 export const KPOP_FALLBACK = 'https://data.source.coop/smartmaps/foil4gr1/kpop.pmtiles';
 
 /**
+ * Validate the optional tile-source override: only an absolute https URL or a
+ * same-origin path is honoured. Anything else (http, other schemes, junk) is
+ * rejected loudly and falls back to the bundled dataset — defence-in-depth so a
+ * poisoned build env cannot silently redirect tile reads to an arbitrary host.
+ */
+function resolvePopSource(raw: string | undefined): string {
+  if (!raw) return DEFAULT_POP_PMTILES;
+  if (raw.startsWith('/')) return raw;
+  try {
+    if (new URL(raw).protocol === 'https:') return raw;
+  } catch {
+    /* not a valid URL */
+  }
+  console.error(`[wurman] Ignoring invalid VITE_POP_PMTILES_URL; using bundled dataset.`);
+  return DEFAULT_POP_PMTILES;
+}
+
+/**
  * Active H3 tile source. Override via VITE_POP_PMTILES_URL to point at a hosted
  * copy (e.g. wurman_cities.pmtiles on R2/CloudFront).
  */
-export const TILES_PMTILES = import.meta.env.VITE_POP_PMTILES_URL || DEFAULT_POP_PMTILES;
+export const TILES_PMTILES = resolvePopSource(import.meta.env.VITE_POP_PMTILES_URL);
 
 /**
  * Dummy URL template for deck.gl MVTLayer — intercepted by custom fetch

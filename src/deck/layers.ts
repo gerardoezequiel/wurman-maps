@@ -115,8 +115,23 @@ function processEnrichBatch(): void {
   if (!mapRef || !_enrichQueue.length) return;
 
   const BATCH = 200;
+  const MAX_RETRY = 8; // off-screen / tiles-not-loaded cells get a few retries
   const batch = _enrichQueue.splice(0, BATCH);
   let changed = false;
+  let requeued = false;
+
+  // Retry a cell later instead of consuming it permanently (Overture basemap
+  // tiles may still be loading, or the cell may be just off-screen).
+  const retry = (f: PreparedFeature): void => {
+    const p = f.properties as any;
+    p.__er = (p.__er || 0) + 1;
+    if (p.__er <= MAX_RETRY) {
+      _enrichQueue.push(f);
+      requeued = true;
+    } else {
+      p.__oe = 1; // give up — classify with whatever attributes are present
+    }
+  };
 
   const { clientWidth: cw, clientHeight: ch } = mapRef.getCanvas();
 
@@ -142,16 +157,16 @@ function processEnrichBatch(): void {
       pt = mapRef.project([lng, lat]);
     } catch { continue; }
 
-    if (pt.x < -50 || pt.y < -50 || pt.x > cw + 50 || pt.y > ch + 50) continue;
+    if (pt.x < -50 || pt.y < -50 || pt.x > cw + 50 || pt.y > ch + 50) { retry(f); continue; }
 
     let hits: maplibregl.MapGeoJSONFeature[];
     try {
       hits = mapRef.queryRenderedFeatures(pt, {
         layers: ['land-cover', 'land-use', 'water-below'],
       });
-    } catch { continue; }
+    } catch { retry(f); continue; }
 
-    if (!hits.length) continue; // Overture tiles may not be loaded — skip, retry on next move
+    if (!hits.length) { retry(f); continue; } // Overture tiles not loaded yet — retry later
 
     const e = mapOvertureHits(hits);
     if (Object.keys(e).length > 0) {
@@ -164,8 +179,11 @@ function processEnrichBatch(): void {
   }
 
   if (_enrichQueue.length) {
-    _enrichTimer = setTimeout(processEnrichBatch, 8); // yield to browser between batches
-  } else if (changed && _enrichCallback) {
+    // Back off when the batch made no progress (only re-queues) so retries wait
+    // for basemap tiles to load instead of spinning.
+    _enrichTimer = setTimeout(processEnrichBatch, requeued && !changed ? 250 : 8);
+  }
+  if (changed && _enrichCallback) {
     _enrichCallback(); // trigger deck.gl re-render with enriched classifications
   }
 }
@@ -182,35 +200,38 @@ async function pmtilesFetch(url: string, context: any): Promise<any> {
   // Match the {z}/{x}/{y}.mvt the MVTLayer appends — generic so a renamed
   // mirror (e.g. wurman_cities.pmtiles) still resolves.
   const match = url.match(/\/(\d+)\/(\d+)\/(\d+)\.mvt\b/);
-  if (match) {
-    const z = +match[1], x = +match[2], y = +match[3];
-    try {
-      const tile = await pm.getZxy(z, x, y);
-      if (!tile?.data) return null;
-      const { parse } = await import('@loaders.gl/core');
-      const { MVTLoader } = await import('@loaders.gl/mvt');
-      // CRITICAL: pass the tile index + coordinates:'wgs84' so MVTLoader
-      // projects local tile coordinates to lng/lat. Without this, features
-      // parse in local space and all glyphs collapse near (0,0).
-      return await parse(tile.data, MVTLoader, {
-        ...context?.loadOptions,
-        mvt: {
-          ...context?.loadOptions?.mvt,
-          shape: 'geojson',
-          coordinates: 'wgs84',
-          tileIndex: { x, y, z },
-        },
-      });
-    } catch (err) {
-      // Never swallow silently: log and return null so the layer renders empty
-      // rather than throwing inside the tile pipeline.
-      console.error(`[wurman] kpop tile ${z}/${x}/${y} failed:`, err);
-      return null;
-    }
+  if (!match) {
+    // This layer only ever serves PMTiles; never fetch an arbitrary URL.
+    console.warn(`[wurman] pmtilesFetch ignoring non-tile URL: ${url}`);
+    return null;
   }
-  // Fallback to default fetch for non-PMTiles URLs
-  const { load } = await import('@loaders.gl/core');
-  return load(url, context?.loadOptions);
+  const z = +match[1], x = +match[2], y = +match[3];
+  const signal: AbortSignal | undefined = context?.signal;
+  try {
+    if (signal?.aborted) return null;
+    const tile = await pm.getZxy(z, x, y, signal);
+    if (!tile?.data || signal?.aborted) return null;
+    const { parse } = await import('@loaders.gl/core');
+    const { MVTLoader } = await import('@loaders.gl/mvt');
+    // CRITICAL: pass the tile index + coordinates:'wgs84' so MVTLoader
+    // projects local tile coordinates to lng/lat. Without this, features
+    // parse in local space and all glyphs collapse near (0,0).
+    return await parse(tile.data, MVTLoader, {
+      ...context?.loadOptions,
+      mvt: {
+        ...context?.loadOptions?.mvt,
+        shape: 'geojson',
+        coordinates: 'wgs84',
+        tileIndex: { x, y, z },
+      },
+    });
+  } catch (err) {
+    if (signal?.aborted) return null; // cancellation is expected during pan/zoom
+    // Never swallow silently: log and return null so the layer renders empty
+    // rather than throwing inside the tile pipeline.
+    console.error(`[wurman] tile ${z}/${x}/${y} failed:`, err);
+    return null;
+  }
 }
 
 /** Compute centroid of a polygon ring */
