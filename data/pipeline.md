@@ -4,6 +4,35 @@ Replicate the Kontur Geocint bivariate tile dataset from open sources.
 The goal: a single PMTiles file with H3 res-8 hexagons carrying the properties
 that `src/deck/classify.ts` needs for the Wurman shape grammar.
 
+## Implemented pipeline (Overture-based, no raster step)
+
+The shipped dataset (`public/wurman_cities.pmtiles`) is built by two scripts and
+covers the 10 city presets. It avoids raster processing entirely by sourcing land
+cover from Overture's `base/land_cover` theme (itself derived from ESA WorldCover):
+
+```bash
+brew install duckdb tippecanoe pmtiles
+node data/extract-population.mjs            # kpop z9 tiles → data/sources/population.csv
+duckdb wurman.db < data/build-cities.sql    # join Overture land cover/use/water/POIs → geojsonseq
+tippecanoe -o /tmp/wurman_cities.mbtiles -l kpop -Z2 -z9 \
+  --no-feature-limit --no-tile-size-limit -r1 --no-line-simplification \
+  -f data/sources/wurman_cities.geojsonseq
+pmtiles convert /tmp/wurman_cities.mbtiles public/wurman_cities.pmtiles
+```
+
+Result: ~24.8k H3 res-8 cells, 8 MB PMTiles, self-hosted from `public/`. To refresh,
+bump the pinned Overture release in `data/build-cities.sql`. To host on a CDN instead
+of bundling, upload and point `VITE_POP_PMTILES_URL` at it:
+
+```bash
+# Cloudflare R2 (needs your Cloudflare auth):
+wrangler r2 object put wurman-tiles/wurman_cities.pmtiles --file public/wurman_cities.pmtiles
+# then set VITE_POP_PMTILES_URL=https://<your-r2-or-cloudfront>/wurman_cities.pmtiles
+```
+
+The sections below document the **higher-fidelity raster alternative** (ESA WorldCover
+10 m + GHSL + Foursquare via exactextract) for a full 196-property rebuild.
+
 ## Property → Source mapping
 
 ### Tier 1: Population (core — required)
